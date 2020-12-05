@@ -1,0 +1,156 @@
+name: a1to5x
+
+on:
+  workflow_dispatch:
+     inputs:
+       zipname:
+         description: 'ROM NAME(No file extension: crDroidAndroid-11.0-20201126-tissot-v7.0)'
+         required: false
+       filelink:
+         description: 'ROM LINK(Downloadable link)'
+         required: true
+
+jobs:
+  a1to5x:
+    runs-on: ubuntu-latest
+    continue-on-error: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Initialization environment
+        run: |
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install git openjdk-8-jdk wget curl rsync aria2 python python3 unzip device-tree-compiler brotli simg2img img2simg
+          pip3 install protobuf
+          pip install brotli
+
+      - id: var
+        name: Download
+        run: |
+          echo "Download"
+          if [[ ! -z "${{ github.event.inputs.filelink }}" ]]; then
+              if [[ ! -z "${{ github.event.inputs.zipname }}" ]]; then
+                  aria2c -x16 -j$(nproc) -o "${{ github.event.inputs.zipname }}" ${{ github.event.inputs.filelink }} || wget ${{ github.event.inputs.filelink }} -O "${{ github.event.inputs.zipname }}"
+                  echo "::set-output name=zipname::${{ github.event.inputs.zipname }}"
+              else
+                  aria2c -x16 -j$(nproc) ${{ github.event.inputs.filelink }} || wget ${{ github.event.inputs.filelink }}
+                  NAME="$(ls -lS *.zip | head -1 | awk '{print $9}')"
+                  zipname=${NAME%.*}
+                  echo "::set-output name=zipname::$zipname"
+              fi
+          else
+              echo "The link does not exist"
+              exit 1
+          fi
+          ls -al
+
+      - name: Payload Extractor
+        run: |
+          echo "Payload Dumper"
+          unzip ${{ steps.var.outputs.zipname }}.zip payload.bin
+          python3 update-payload-extractor/extract.py payload.bin --output_dir ./
+          ls -al
+
+      - name: Patching Fstab
+        run: |
+          mkdir system/
+          sudo mount system.img system/
+          fstab="system/system/vendor/etc/fstab.qcom"
+          sudo sed -i 's/,slotselect//g' $fstab
+          sudo sed -i 's/,verify//g' $fstab
+          sudo sed -i 's/forceencrypt/encryptable/g' $fstab
+          sudo sed -i 's/fileencryption=ice/encryptable=footer/g' $fstab
+          sudo cp system/system/vendor/etc/fstab.qcom output/fstab.qcom
+          cat system/system/vendor/etc/fstab.qcom
+          sudo umount system
+          sudo rm -rf system
+    
+      - name: Mkbootimg
+        run: |
+          echo "mkbooting"
+          mv boot.img mkbootimg/
+          cd mkbootimg
+          ./mkboot boot.img boot
+          rm boot.img
+          cd boot
+          ls -al
+          cd ../../
+
+      - name: Patching device tree blobs
+        run: |
+          mv mkbootimg/boot/kernel ./image.gz-dtb
+          ./split-appended-dtb image.gz-dtb
+          ls -al
+          rm image.gz-dtb
+          temp=$(ls -lS *.dtb | head -1 | awk '{print $9}')
+          echo temp: $temp
+          dtb=${temp##* }
+          dts=${dtb%.*}.dts
+          echo dtb: $dtb
+          echo dts: $dts
+          dtc -q -I dtb -O dts -o $dts $dtb
+          rm $dtb
+          echo rm: $dtb
+          sed -i '/parts/{n;d;}' $dts
+          sed -i '/vbmeta/d' $dts
+          sed -i '/android,system/{n;d;}' $dts
+          sed -i '/android,system/{n;d;}' $dts
+          sed -i '/android,system/{n;d;}' $dts
+          sed -i '/android,system/d' $dts
+          sed -i '/,discard/{n;s/,slotselect//;}' *.dts
+          sed -i 'N;/\n.*,slotselect/!P;D' $dts
+          sed -i '/,slotselect/{n;d;}' $dts
+          sed -i '/,slotselect/{n;d;}' $dts
+          sed -i '/,slotselect/d' $dts
+          sed -i '/,fstab/r flags.txt' $dts
+          sed -i '/,fstab/G' $dts
+          sed -i '/android,firmware/{n;d;}' $dts
+          sed -i 's/,avb//g' $dts
+          sed -i '/,slotselect/{n;s/disable/ok/;}' $dts
+          sed -i 's/,slotselect//g' $dts
+          dtc -q -I dts -O dtb -o $dtb $dts
+          mv *.dts output/
+          cat kernel *.dtb > image.gz-dtb
+          echo "cat..."
+          ls -al
+          mv image.gz-dtb mkbootimg/boot/kernel
+          sed -i 's/veritykeyid=id:\w*//g' mkbootimg/boot/img_info
+          cat mkbootimg/boot/img_info
+          cp mkbootimg/boot/img_info output/
+          cd mkbootimg
+          ./mkboot boot boot.img
+          cd ..
+          
+      - name: MakeMeSAR
+        run: |
+          mkdir tmp
+          mv mkbootimg/boot.img tmp
+          cd tmp
+          ../magiskboot unpack -h boot.img
+          cp -f ../ramdisk-sar.cpio ramdisk.cpio
+          ../magiskboot repack boot.img
+          ls -al
+          cd ..
+          
+      - name: img2sdat && brotli
+        run: |
+          mv tmp/new-boot.img template/boot.img
+          mv system.img template/system.img
+          cd template
+          ../rimg2sdat.py -c system.img
+          rm system.img
+          rm system.new.dat
+          ls -al
+          cd ..
+          mv template ${{ steps.var.outputs.zipname }}
+          
+
+      - name: Upload to Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: ${{ steps.var.outputs.zipname }}
+          path: |
+            ${{ steps.var.outputs.zipname }}
+          retention-days: 7

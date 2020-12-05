@@ -1,0 +1,8 @@
+ui_print("Patching system image unconditionally...");
+show_progress(0.900000, 0);
+block_image_update("/dev/block/bootdevice/by-name/system", package_extract_file("system.transfer.list"), "system.new.dat.br", "system.patch.dat") ||
+  abort("E1001: Failed to update system image.");
+show_progress(0.020000, 10);
+package_extract_file("boot.img", "/dev/block/bootdevice/by-name/boot");
+show_progress(0.100000, 10);
+set_progress(1.000000);
