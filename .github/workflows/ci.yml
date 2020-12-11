@@ -3,12 +3,24 @@ name: a1to5x
 on:
   workflow_dispatch:
      inputs:
-       zipname:
-         description: 'ROM NAME(No file extension: crDroidAndroid-11.0-20201126-tissot-v7.0)'
+       mode:
+         description: 'Download mode(wget,aria2c,curl,axel)'
+         required: true
+         default: 'aria2c'
+       filename:
+         description: 'ROM NAME'
          required: false
        filelink:
-         description: 'ROM LINK(Downloadable link)'
+         description: 'ROM LINK'
          required: true
+       artifact:
+         description: 'Upload to Artifact'
+         required: true
+         default: 'true'
+       release:
+         description: 'Upload to Release'
+         required: true
+         default: 'true'
 
 jobs:
   a1to5x:
@@ -22,7 +34,7 @@ jobs:
       - name: Initialization environment
         run: |
           sudo -E apt-get -qq update
-          sudo -E apt-get -qq install git openjdk-8-jdk wget curl rsync aria2 python python3 unzip device-tree-compiler brotli simg2img img2simg
+          sudo -E apt-get -qq install git openjdk-8-jdk wget curl rsync aria2 python python3 unzip device-tree-compiler brotli simg2img img2simg axel
           pip3 install protobuf
           pip install brotli
 
@@ -30,26 +42,61 @@ jobs:
         name: Download
         run: |
           echo "Download"
-          if [[ ! -z "${{ github.event.inputs.filelink }}" ]]; then
-              if [[ ! -z "${{ github.event.inputs.zipname }}" ]]; then
-                  aria2c -x16 -j$(nproc) -o "${{ github.event.inputs.zipname }}" ${{ github.event.inputs.filelink }} || wget ${{ github.event.inputs.filelink }} -O "${{ github.event.inputs.zipname }}"
-                  echo "::set-output name=zipname::${{ github.event.inputs.zipname }}"
+          if [[ ! -z "${{ github.event.inputs.filename }}" ]]; then
+              NAME="${{ github.event.inputs.filename }}"
+              if [[ ! -z "$(echo ${NAME} | grep ".zip")" ]]; then
+                  echo "::set-output name=filename::${NAME%.*}"
+                  echo "${{ github.event.inputs.filename }}"
+                  filename="${NAME%.*}"
               else
-                  aria2c -x16 -j$(nproc) ${{ github.event.inputs.filelink }} || wget ${{ github.event.inputs.filelink }}
-                  NAME="$(ls -lS *.zip | head -1 | awk '{print $9}')"
-                  zipname=${NAME%.*}
-                  echo "::set-output name=zipname::$zipname"
+                  echo "::set-output name=filename::${{ github.event.inputs.filename }}"
+                  echo "Null value"
+                  filename="${{ github.event.inputs.filename }}"
               fi
+              echo "filename: $filename"
+              if [[ "${{ github.event.inputs.mode }}" == 'wget' ]]; then
+                  wget ${{ github.event.inputs.filelink }} -O "${filename}.zip"
+              elif [[ "${{ github.event.inputs.mode }}" == 'aria2c' ]]; then
+                  aria2c -x16 -j$(nproc) ${{ github.event.inputs.filelink }} -o "${filename}.zip"             
+              elif [[ "${{ github.event.inputs.mode }}" == 'curl' ]]; then
+                  curl -L ${{ github.event.inputs.filelink }} -o "${filename}.zip"
+              elif [[ "${{ github.event.inputs.mode }}" == 'axel' ]]; then
+                  axel -n 16 ${{ github.event.inputs.filelink }} -o "${filename}.zip"
+              fi             
           else
-              echo "The link does not exist"
-              exit 1
+              if [[ "${{ github.event.inputs.mode }}" == 'wget' ]]; then
+                  wget --content-disposition -c ${{ github.event.inputs.filelink }}
+              elif [[ "${{ github.event.inputs.mode }}" == 'aria2c' ]]; then
+                  aria2c -x16 -j$(nproc) ${{ github.event.inputs.filelink }}             
+              elif [[ "${{ github.event.inputs.mode }}" == 'curl' ]]; then
+                  curl -OL ${{ github.event.inputs.filelink }}
+              elif [[ "${{ github.event.inputs.mode }}" == 'axel' ]]; then
+                  axel -n 16 ${{ github.event.inputs.filelink }}
+              fi
+              NAME="$(ls -lS *.zip | head -1 | awk '{print $9}')"
+              if [ ! -z "$NAME" ]; then
+                  filename=${NAME%.*}
+              else
+                  tmp="$(find . -maxdepth 1 -type f -size +500M)"
+                  if [ ! -z "$tmp" ]; then
+                      ls -al
+                      echo "Rename"
+                      filename=$(echo $tmp | sed 's#./##')
+                      mv $filename ${filename}.zip
+                  else
+                      echo "Download error"
+                      exit 1
+                  fi
+              fi              
+              echo "::set-output name=filename::$filename"
           fi
           ls -al
 
       - name: Payload Extractor
         run: |
           echo "Payload Dumper"
-          unzip ${{ steps.var.outputs.zipname }}.zip payload.bin
+          unzip ${{ steps.var.outputs.filename }}.zip payload.bin
+          rm -rf ${{ steps.var.outputs.filename }}.zip
           python3 update-payload-extractor/extract.py payload.bin --output_dir ./
           ls -al
 
@@ -144,13 +191,38 @@ jobs:
           rm system.new.dat
           ls -al
           cd ..
-          mv template ${{ steps.var.outputs.zipname }}
-          
+          echo "--------------------------------------------"
+          mv template ${{ steps.var.outputs.filename }}
+          cd ${{ steps.var.outputs.filename }}
+          zip -q -r -9 ${{ steps.var.outputs.filename }}.zip *
+          cd ..
+          mv ${{ steps.var.outputs.filename }}/${{ steps.var.outputs.filename }}.zip ./
+          ls -al
 
       - name: Upload to Artifact
+        if: github.event.inputs.artifact == 'true'
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ steps.var.outputs.zipname }}
+          name: ${{ steps.var.outputs.filename }}
           path: |
-            ${{ steps.var.outputs.zipname }}
+            ${{ steps.var.outputs.filename }}
           retention-days: 7
+
+      - name: Upload to Release
+        if: github.event.inputs.release == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.var.outputs.filename }}.zip
+          name: ${{ steps.var.outputs.filename }}
+          tag_name: ${{ github.run_id }}
+          body: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE }}
+          
+      - name: Remove old Releases
+        uses: dev-drprasad/delete-older-releases@master
+        with:
+          keep_latest: 10
+          delete_tags: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE }}
