@@ -182,11 +182,8 @@ jobs:
           ls -al
           cd ..
           
-      - name: img2sdat && brotli
+      - name: img2sdat 
         run: |
-          pip install --upgrade pip
-          pip install brotli
-          pip install brotlipy
           mv tmp/new-boot.img template/boot.img
           mv system.img template/system.img
           cd template
