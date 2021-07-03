@@ -35,6 +35,7 @@ jobs:
         run: |
           sudo -E apt-get -qq update
           sudo -E apt-get -qq install git openjdk-8-jdk wget curl rsync aria2 python python3 unzip device-tree-compiler brotli simg2img img2simg axel
+          sudo apt install python-is-python3
           pip install --upgrade pip
           pip3 install protobuf
           pip install brotli
@@ -182,8 +183,9 @@ jobs:
           ls -al
           cd ..
           
-      - name: img2sdat 
+      - name: img2sdat&brotli
         run: |
+          pip3 install brotli
           mv tmp/new-boot.img template/boot.img
           mv system.img template/system.img
           cd template
