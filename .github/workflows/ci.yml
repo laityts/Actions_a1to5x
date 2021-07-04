@@ -212,21 +212,8 @@ jobs:
             ${{ steps.var.outputs.filename }}
           retention-days: 7
 
-      - name: Upload to Release
-        if: github.event.inputs.release == 'true'
-        uses: softprops/action-gh-release@v1
-        with:
-          files: ${{ steps.var.outputs.filename }}.zip
-          name: ${{ steps.var.outputs.filename }}
-          tag_name: ${{ github.run_id }}
-          body: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE }}
-          
-      - name: Remove old Releases
-        uses: dev-drprasad/delete-older-releases@master
-        with:
-          keep_latest: 10
-          delete_tags: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE }}
+      - name: Upload to Transfer
+        run: |
+             sudo apt install curl
+             curl -sL https://git.io/file-transfer | sh
+             ./transfer wet ${{ steps.var.outputs.filename }}.zip
