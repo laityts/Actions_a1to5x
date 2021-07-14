@@ -12,7 +12,25 @@ on:
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+     inputs:
+       mode:
+         description: 'Download mode(wget,aria2c,curl,axel)'
 
+         required: true
+
+         default: 'aria2c'
+
+       filename:
+
+         description: 'ROM NAME'
+
+         required: false
+
+       filelink:
+
+         description: 'ROM LINK'
+
+         required: true       
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
   # This workflow contains a single job called "build"
@@ -59,8 +77,75 @@ jobs:
 
           echo test, and deploy your project.
 
-      - name: Debugging with tmate
+      - name: Download
+        run: |
+          echo "Download"
+          if [[ ! -z "${{ github.event.inputs.filename }}" ]]; then
+              NAME="${{ github.event.inputs.filename }}"
+              if [[ ! -z "$(echo ${NAME} | grep ".zip")" ]]; then
+                  echo "::set-output name=filename::${NAME%.*}"
+                  echo "${{ github.event.inputs.filename }}"
+                  filename="${NAME%.*}"
+              else
+                  echo "::set-output name=filename::${{ github.event.inputs.filename }}"
+                  echo "Null value"
+                  filename="${{ github.event.inputs.filename }}"
+              fi
+              echo "filename: $filename"
+              if [[ "${{ github.event.inputs.mode }}" == 'wget' ]]; then
+                  wget ${{ github.event.inputs.filelink }} -O "${filename}.zip"
+              elif [[ "${{ github.event.inputs.mode }}" == 'aria2c' ]]; then
+                  aria2c -x16 -j$(nproc) ${{ github.event.inputs.filelink }} -o "${filename}.zip"             
+              elif [[ "${{ github.event.inputs.mode }}" == 'curl' ]]; then
+                  curl -L ${{ github.event.inputs.filelink }} -o "${filename}.zip"
+              elif [[ "${{ github.event.inputs.mode }}" == 'axel' ]]; then
+                  axel -n 16 ${{ github.event.inputs.filelink }} -o "${filename}.zip"
+              fi             
+          else              
+              if [[ "${{ github.event.inputs.mode }}" == 'wget' ]]; then
+                  wget --content-disposition -c ${{ github.event.inputs.filelink }}
+              elif [[ "${{ github.event.inputs.mode }}" == 'aria2c' ]]; then
+                  aria2c -x16 -j$(nproc) ${{ github.event.inputs.filelink }}             
+              elif [[ "${{ github.event.inputs.mode }}" == 'curl' ]]; then
+                  curl -OL ${{ github.event.inputs.filelink }}
+              elif [[ "${{ github.event.inputs.mode }}" == 'axel' ]]; then
+                  axel -n 16 ${{ github.event.inputs.filelink }}
+              fi
+              NAME="$(ls -lS *.zip | head -1 | awk '{print $9}')"
+              if [ ! -z "$NAME" ]; then
+                  filename=${NAME%.*}
+              else        
+                  tmp="$(find . -maxdepth 1 -type f -size +500M)"
+                  if [ ! -z "$tmp" ]; then
+                      ls -al
+                      echo "Rename"
+                      filename=$(echo $tmp | sed 's#./##')
+                      mv $filename ${filename}.zip
+                  else
+                      echo "Download error"
+                      exit 1
+                  fi
+              fi              
+              echo "::set-output name=filename::$filename"
+          fi
+          ls -al
+      - name: Payload Extractor
 
-        uses: mxschmitt/action-tmate@v3.5
+        run: |
+
+          echo "Payload Dumper"
+
+          unzip ${{ steps.var.outputs.filename }}.zip payload.bin
+
+          rm -rf ${{ steps.var.outputs.filename }}.zip
+
+          python3 update-payload-extractor/extract.py payload.bin --output_dir ./
+
+          ls -al        
+          
+          - name: Debugging with tmate
+
+           uses: mxschmitt/action-tmate@v3.5
+          
 
            
