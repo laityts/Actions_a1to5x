@@ -4,19 +4,20 @@ on:
   workflow_dispatch:
      inputs:
        mode:
-         description: 'Download mode(wget,aria2c,curl,axel)'
+         description: 'Download mode(aria2c,curl,axel,wget)'
          required: true
          default: 'aria2c'
+       output:
+         description: 'Output(wget=O)'
+         required: true
+         default: 'o'
        filename:
          description: 'ROM NAME'
-         required: false
+         required: true
+         default: 'xx.zip'
        filelink:
          description: 'ROM LINK'
          required: true
-       artifact:
-         description: 'Upload to Artifact'
-         required: true
-         default: 'true'
        release:
          description: 'Upload to Release'
          required: true
@@ -34,7 +35,7 @@ jobs:
       - name: Initialization environment
         run: |
           sudo -E apt-get -qq update
-          sudo -E apt-get -qq install git openjdk-8-jdk wget curl rsync aria2 python python3 unzip device-tree-compiler brotli simg2img img2simg axel
+          sudo -E apt-get -qq install git openjdk-8-jdk wget curl rsync aria2 python python3 unzip device-tree-compiler brotli simg2img img2simg axel cpio
           pip3 install protobuf
           pip install brotli
 
@@ -42,130 +43,93 @@ jobs:
         name: Download
         run: |
           echo "Download"
-          if [[ ! -z "${{ github.event.inputs.filename }}" ]]; then
-              NAME="${{ github.event.inputs.filename }}"
-              if [[ ! -z "$(echo ${NAME} | grep ".zip")" ]]; then
-                  echo "::set-output name=filename::${NAME%.*}"
-                  echo "${{ github.event.inputs.filename }}"
-                  filename="${NAME%.*}"
-              else
-                  echo "::set-output name=filename::${{ github.event.inputs.filename }}"
-                  echo "Null value"
-                  filename="${{ github.event.inputs.filename }}"
-              fi
-              echo "filename: $filename"
-              if [[ "${{ github.event.inputs.mode }}" == 'wget' ]]; then
-                  wget ${{ github.event.inputs.filelink }} -O "${filename}.zip"
-              elif [[ "${{ github.event.inputs.mode }}" == 'aria2c' ]]; then
-                  aria2c -x16 -j$(nproc) ${{ github.event.inputs.filelink }} -o "${filename}.zip"             
-              elif [[ "${{ github.event.inputs.mode }}" == 'curl' ]]; then
-                  curl -L ${{ github.event.inputs.filelink }} -o "${filename}.zip"
-              elif [[ "${{ github.event.inputs.mode }}" == 'axel' ]]; then
-                  axel -n 16 ${{ github.event.inputs.filelink }} -o "${filename}.zip"
-              fi             
-          else
-              if [[ "${{ github.event.inputs.mode }}" == 'wget' ]]; then
-                  wget --content-disposition -c ${{ github.event.inputs.filelink }}
-              elif [[ "${{ github.event.inputs.mode }}" == 'aria2c' ]]; then
-                  aria2c -x16 -j$(nproc) ${{ github.event.inputs.filelink }}             
-              elif [[ "${{ github.event.inputs.mode }}" == 'curl' ]]; then
-                  curl -OL ${{ github.event.inputs.filelink }}
-              elif [[ "${{ github.event.inputs.mode }}" == 'axel' ]]; then
-                  axel -n 16 ${{ github.event.inputs.filelink }}
-              fi
-              NAME="$(ls -lS *.zip | head -1 | awk '{print $9}')"
-              if [ ! -z "$NAME" ]; then
-                  filename=${NAME%.*}
-              else
-                  tmp="$(find . -maxdepth 1 -type f -size +500M)"
-                  if [ ! -z "$tmp" ]; then
-                      ls -al
-                      echo "Rename"
-                      filename=$(echo $tmp | sed 's#./##')
-                      mv $filename ${filename}.zip
-                  else
-                      echo "Download error"
-                      exit 1
-                  fi
-              fi              
-              echo "::set-output name=filename::$filename"
+          NAME="${{ github.event.inputs.filename }}"
+          if [[ ! -z "$(echo ${NAME} | grep ".zip")" ]]; then
+              echo "::set-output name=filename::${NAME%.*}"
+              filename="${NAME%.*}"
           fi
+          ${{ github.event.inputs.mode }} ${{ github.event.inputs.filelink }} -${{ github.event.inputs.output }} "${filename}.zip"
           ls -al
 
-      - name: Payload Extractor
+      - name: Payload Extracting
         run: |
-          echo "Payload Dumper"
-          unzip ${{ steps.var.outputs.filename }}.zip payload.bin
+          echo "Payload Extracting"
+          unzip ${{ steps.var.outputs.filename }}.zip
           rm -rf ${{ steps.var.outputs.filename }}.zip
-          python3 update-payload-extractor/extract.py payload.bin --output_dir ./
-          ls -al
+          python3 update-payload-extractor/extract.py payload.bin --output_dir ./output/
+          sudo ls -R output/
 
-      - name: Patching Fstab
+      - name: Fstab Patching
         run: |
-          mkdir system/
-          sudo mount system.img system/
-          fstab="system/system/vendor/etc/fstab.qcom"
-          sudo sed -i 's/,slotselect//g' $fstab
-          sudo sed -i 's/,verify//g' $fstab
-          sudo sed -i 's/forceencrypt/encryptable/g' $fstab
-          sudo sed -i 's/fileencryption=ice/encryptable=footer/g' $fstab
-          sudo cp system/system/vendor/etc/fstab.qcom output/fstab.qcom
-          cat system/system/vendor/etc/fstab.qcom
-          sudo umount system
-          sudo rm -rf system
-    
-      - name: Mkbootimg
+            echo "system"
+            mkdir system/
+            sudo mount output/system.img system/
+            sudo cp system/system/build.prop ./
+            cat system/system/vendor/etc/fstab.qcom
+            fstab="system/system/vendor/etc/fstab.qcom"
+            sudo sed -i 's/,slotselect//g' $fstab
+            sudo sed -i 's/,verify//g' $fstab
+            sudo sed -i 's/forceencrypt/encryptable/g' $fstab
+            sudo sed -i 's/fileencryption=ice/encryptable=footer/g' $fstab
+            #sudo sed -i '/mnt_point/{n;/system/d;}' $fstab
+            #sudo sed -i '/mnt_point/a\/dev/block/bootdevice/by-name/system		/system			ext4	ro								wait,recoveryonly' $fstab
+            #sudo sed -i '/mnt_point/G' $fstab
+            #sudo sed -i '/mnt_point/a\/dev/block/bootdevice/by-name/recovery		/recovery		emmc	defaults							defaults' $fstab
+            #sudo sed -i '/mnt_point/a\\n/dev/block/bootdevice/by-name/boot		/boot			emmc	defaults							defaults' $fstab
+            #sudo sed -i '/persist/i\/dev/block/bootdevice/by-name/cache		/cache			f2fs	nosuid,nodev,noatime,inline_xattr,flush_merge,data_flush	wait,formattable,check' $fstab
+            #sudo sed -i '/cache/a\\n/dev/block/bootdevice/by-name/cache		/cache			ext4	nosuid,nodev,noatime						wait,formattable,check' $fstab
+            cat system/system/vendor/etc/fstab.qcom
+            sudo cp system/system/vendor/etc/fstab.qcom output/fstab.qcom
+            sudo umount system
+            sudo rm -rf system
+
+      - name: img_info && dtb Patching
         run: |
-          echo "mkbooting"
-          mv boot.img mkbootimg/
+          echo "mkboot"
+          mv output/boot.img mkbootimg/
           cd mkbootimg
           ./mkboot boot.img boot
           rm boot.img
           cd boot
-          ls -al
+          sed -i 's/veritykeyid=id:\w*//g' img_info
+          cp img_info ../../output/
+          cat img_info
+          ls -R
           cd ../../
-
-      - name: Patching device tree blobs
-        run: |
-          mv mkbootimg/boot/kernel ./image.gz-dtb
+          mv mkbootimg/boot/kernel image.gz-dtb
           ./split-appended-dtb image.gz-dtb
-          ls -al
+          ls
           rm image.gz-dtb
-          temp=$(ls -lS *.dtb | head -1 | awk '{print $9}')
-          echo temp: $temp
-          dtb=${temp##* }
-          dts=${dtb%.*}.dts
-          echo dtb: $dtb
-          echo dts: $dts
-          dtc -q -I dtb -O dts -o $dts $dtb
-          rm $dtb
-          echo rm: $dtb
-          sed -i '/parts/{n;d;}' $dts
-          sed -i '/vbmeta/d' $dts
-          sed -i '/android,system/{n;d;}' $dts
-          sed -i '/android,system/{n;d;}' $dts
-          sed -i '/android,system/{n;d;}' $dts
-          sed -i '/android,system/d' $dts
-          sed -i '/,discard/{n;s/,slotselect//;}' *.dts
-          sed -i 'N;/\n.*,slotselect/!P;D' $dts
-          sed -i '/,slotselect/{n;d;}' $dts
-          sed -i '/,slotselect/{n;d;}' $dts
-          sed -i '/,slotselect/d' $dts
-          sed -i '/,fstab/r flags.txt' $dts
-          sed -i '/,fstab/G' $dts
-          sed -i '/android,firmware/{n;d;}' $dts
-          sed -i 's/,avb//g' $dts
-          sed -i '/,slotselect/{n;s/disable/ok/;}' $dts
-          sed -i 's/,slotselect//g' $dts
-          dtc -q -I dts -O dtb -o $dtb $dts
-          mv *.dts output/
+          for i in `find *.dtb`; do
+              dts=${i%.*}.dts
+              dtc -q -I dtb -O dts -o $dts $i
+              rm -rf $i
+              if [ `grep -c "vbmeta" $dts` -ne '0' ];then
+                  echo $dts
+                  line="$(grep -n "firmware {" $dts)"
+                  linea="$(echo $line | cut -d ":" -f 1)"
+                  lineb="`expr $linea + 28`""p"
+                  sed -n "$linea,$lineb" $dts
+                  sed -i '/parts/{n;d;}' $dts
+                  sed -i '/parts/{n;d;}' $dts
+                  sed -i '/vbmeta/d' $dts
+                  sed -i '/android,vbmeta/d' $dts
+                  sed -i '/parts/d' $dts
+                  sed -i 's/,avb//g' $dts
+                  sed -i '/,slotselect/{n;s/disable/ok/;}' $dts
+                  sed -i 's/,slotselect//g' $dts
+                  line="$(grep -n "firmware {" $dts)"
+                  linea="$(echo $line | cut -d ":" -f 1)"
+                  lineb="`expr $linea + 24`""p"
+                  sed -n "$linea,$lineb" $dts
+              fi
+              cp $dts output/
+              dtc -q -I dts -O dtb -o $i $dts
+              rm -rf $dts
+          done
           cat kernel *.dtb > image.gz-dtb
-          echo "cat..."
           ls -al
           mv image.gz-dtb mkbootimg/boot/kernel
-          sed -i 's/veritykeyid=id:\w*//g' mkbootimg/boot/img_info
-          cat mkbootimg/boot/img_info
-          cp mkbootimg/boot/img_info output/
           cd mkbootimg
           ./mkboot boot boot.img
           cd ..
@@ -176,20 +140,25 @@ jobs:
           mv mkbootimg/boot.img tmp
           cd tmp
           ../magiskboot unpack -h boot.img
-          cp -f ../ramdisk-sar.cpio ramdisk.cpio
+          cp ramdisk.cpio ../output/
+          sdk=$(sudo cat ../build.prop | grep ro.build.version.sdk | cut -d'=' -f2)
+          if [ "$sdk" -eq "31" ]; then
+              echo "sdk: "$sdk
+              cp -f ../12/ramdisk-sar.cpio ramdisk.cpio
+          else
+              echo "sdk -le 30"
+              cp -f ../ramdisk-sar.cpio ramdisk.cpio
+          fi
           ../magiskboot repack boot.img
           ls -al
           cd ..
+          mv tmp/new-boot.img output/boot.img
           
-      - name: img2sdat && brotli
+      - name: Packing
         run: |
-          pip install brotli
-          mv tmp/new-boot.img template/boot.img
-          mv system.img template/system.img
+          mv output/boot.img template/boot.img
+          mv output/system.img template/system.img
           cd template
-          ../rimg2sdat.py -c system.img
-          rm system.img
-          rm system.new.dat
           ls -al
           cd ..
           echo "--------------------------------------------"
@@ -201,12 +170,11 @@ jobs:
           ls -al
 
       - name: Upload to Artifact
-        if: github.event.inputs.artifact == 'true'
         uses: actions/upload-artifact@v2
         with:
-          name: ${{ steps.var.outputs.filename }}
+          name: output
           path: |
-            ${{ steps.var.outputs.filename }}
+            output
           retention-days: 7
 
       - name: Upload to Release
