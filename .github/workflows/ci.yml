@@ -69,6 +69,7 @@ jobs:
             fstab="system/system/vendor/etc/fstab.qcom"
             sudo sed -i 's/,slotselect//g' $fstab
             sudo sed -i 's/,verify//g' $fstab
+            sudo sed -i 's/,avb//g' $fstab
             sudo sed -i 's/forceencrypt/encryptable/g' $fstab
             sudo sed -i 's/fileencryption=ice/encryptable=footer/g' $fstab
             sudo sed -i '/mnt_point/{n;/system/d;}' $fstab
@@ -111,10 +112,19 @@ jobs:
                   lineb="`expr $linea + 28`""p"
                   sed -n "$linea,$lineb" $dts
                   sed -i '/parts/{n;d;}' $dts
-                  sed -i '/parts/{n;d;}' $dts
                   sed -i '/vbmeta/d' $dts
-                  sed -i '/android,vbmeta/d' $dts
-                  sed -i '/parts/d' $dts
+                  sed -i '/android,system/{n;d;}' $dts
+                  sed -i '/android,system/{n;d;}' $dts
+                  sed -i '/android,system/{n;d;}' $dts
+                  sed -i '/android,system/d' $dts
+                  sed -i '/,discard/{n;s/,slotselect//;}' *.dts
+                  sed -i 'N;/\n.*,slotselect/!P;D' $dts
+                  sed -i '/,slotselect/{n;d;}' $dts
+                  sed -i '/,slotselect/{n;d;}' $dts
+                  sed -i '/,slotselect/d' $dts
+                  sed -i '/,fstab/r flags.txt' $dts
+                  sed -i '/,fstab/G' $dts
+                  sed -i '/android,firmware/{n;d;}' $dts
                   sed -i 's/,avb//g' $dts
                   sed -i '/,slotselect/{n;s/disable/ok/;}' $dts
                   sed -i 's/,slotselect//g' $dts
