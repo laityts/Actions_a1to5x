@@ -187,11 +187,4 @@ jobs:
           body: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         env:
           GITHUB_TOKEN: ${{ secrets.RELEASE }}
-          
-      - name: Remove old Releases
-        uses: dev-drprasad/delete-older-releases@master
-        with:
-          keep_latest: 10
-          delete_tags: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE }}
+
