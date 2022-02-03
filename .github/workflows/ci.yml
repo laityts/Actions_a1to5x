@@ -71,13 +71,13 @@ jobs:
             sudo sed -i 's/,verify//g' $fstab
             sudo sed -i 's/forceencrypt/encryptable/g' $fstab
             sudo sed -i 's/fileencryption=ice/encryptable=footer/g' $fstab
-            #sudo sed -i '/mnt_point/{n;/system/d;}' $fstab
-            #sudo sed -i '/mnt_point/a\/dev/block/bootdevice/by-name/system		/system			ext4	ro								wait,recoveryonly' $fstab
-            #sudo sed -i '/mnt_point/G' $fstab
-            #sudo sed -i '/mnt_point/a\/dev/block/bootdevice/by-name/recovery		/recovery		emmc	defaults							defaults' $fstab
-            #sudo sed -i '/mnt_point/a\\n/dev/block/bootdevice/by-name/boot		/boot			emmc	defaults							defaults' $fstab
-            #sudo sed -i '/persist/i\/dev/block/bootdevice/by-name/cache		/cache			f2fs	nosuid,nodev,noatime,inline_xattr,flush_merge,data_flush	wait,formattable,check' $fstab
-            #sudo sed -i '/cache/a\\n/dev/block/bootdevice/by-name/cache		/cache			ext4	nosuid,nodev,noatime						wait,formattable,check' $fstab
+            sudo sed -i '/mnt_point/{n;/system/d;}' $fstab
+            sudo sed -i '/mnt_point/a\/dev/block/bootdevice/by-name/system		/system			ext4	ro								wait,recoveryonly' $fstab
+            sudo sed -i '/mnt_point/G' $fstab
+            sudo sed -i '/mnt_point/a\/dev/block/bootdevice/by-name/recovery		/recovery		emmc	defaults							defaults' $fstab
+            sudo sed -i '/mnt_point/a\\n/dev/block/bootdevice/by-name/boot		/boot			emmc	defaults							defaults' $fstab
+            sudo sed -i '/persist/i\/dev/block/bootdevice/by-name/cache		/cache			f2fs	nosuid,nodev,noatime,inline_xattr,flush_merge,data_flush	wait,formattable,check' $fstab
+            sudo sed -i '/cache/a\\n/dev/block/bootdevice/by-name/cache		/cache			ext4	nosuid,nodev,noatime						wait,formattable,check' $fstab
             cat system/system/vendor/etc/fstab.qcom
             sudo cp system/system/vendor/etc/fstab.qcom output/fstab.qcom
             sudo umount system
