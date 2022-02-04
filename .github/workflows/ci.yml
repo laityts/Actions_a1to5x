@@ -178,13 +178,10 @@ jobs:
           mv output/system.img template/system.img
           cd template
           ls -al
-          cd ..
           echo "--------------------------------------------"
-          mv template ${{ steps.var.outputs.filename }}
-          cd ${{ steps.var.outputs.filename }}
           zip -q -r -9 ${{ steps.var.outputs.filename }}.zip *
           cd ..
-          mv ${{ steps.var.outputs.filename }}/${{ steps.var.outputs.filename }}.zip ./
+          mv template/${{ steps.var.outputs.filename }}.zip ./
           ls -al
 
       - name: Upload to Artifact
@@ -194,6 +191,14 @@ jobs:
           path: |
             output
           retention-days: 7
+
+      - name: Upload to WeTransfer
+        run: |
+          curl -fsSL git.io/file-transfer | sh
+          wetrans=$(./transfer wet -s -p 16 --no-progress ${{ steps.var.outputs.filename }}.zip)
+          wetrans=$(echo $wetrans | grep -o -E "https[^ ]*")
+          echo "WeTransfer: $wetrans"
+
 
       - name: Upload to Release
         if: github.event.inputs.release == 'true'
