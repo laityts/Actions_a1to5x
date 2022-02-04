@@ -97,8 +97,11 @@ jobs:
           cat img_info
           ls -R
           cd ../../
-          mv mkbootimg/boot/kernel image.gz-dtb
-          ./split-appended-dtb image.gz-dtb
+          mkdir tmp
+          mv mkbootimg/boot/kernel tmp/image.gz-dtb
+          mv flags.txt tmp/
+          cd tmp
+          ../split-appended-dtb image.gz-dtb
           ls
           rm image.gz-dtb
           for i in `find *.dtb`; do
@@ -133,13 +136,17 @@ jobs:
                   lineb="`expr $linea + 24`""p"
                   sed -n "$linea,$lineb" $dts
               fi
-              cp $dts output/
+              cp $dts ../output/
               dtc -q -I dts -O dtb -o $i $dts
               rm -rf $dts
           done
+          ls
           cat kernel *.dtb > image.gz-dtb
-          ls -al
-          mv image.gz-dtb mkbootimg/boot/kernel
+          rm -f *.dtb
+          ls
+          cd ..
+          mv tmp/image.gz-dtb mkbootimg/boot/kernel
+          rm -rf tmp
           cd mkbootimg
           ./mkboot boot boot.img
           cd ..
@@ -147,7 +154,7 @@ jobs:
       - name: MakeMeSAR
         run: |
           mkdir tmp
-          mv mkbootimg/boot.img tmp
+          mv mkbootimg/boot.img tmp/
           cd tmp
           ../magiskboot unpack -h boot.img
           cp ramdisk.cpio ../output/
