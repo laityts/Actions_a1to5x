@@ -1,0 +1,13 @@
+> **First Time Installation:**
+
+- [ ] Format data `if encrypted`
+- [ ] Reboot to recovery
+- [ ] Back up your efs, persist, modem partitions `5x baseband`
+- [ ] Wipe system, vendor, cache, dalvik, data
+- [ ] Flash ROM zip and magisk `optional`
+- [ ] Flash [A1-V10.0.24.0_Pie_Baseband.zip](https://t.me/TiffanyUpdates/523?single) `First Time`
+- [ ] Reboot & Enjoy
+
+> **Notes:**
+
+- [ ] To restore the 5X baseband, please use twrp to restore the efs, persist, modem backup files.
