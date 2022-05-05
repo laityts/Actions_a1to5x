@@ -1,0 +1,26 @@
+#
+ui_print("--------------------------------------------------");
+ui_print("|                                                        |");
+ui_print("|                      A1 TO 5X                      |");
+ui_print("|                                                        |");
+ui_print("--------------------------------------------------");
+ui_print("--------------------------------------------------");
+ui_print("|               TG:- @Eytan_Tan                |");
+ui_print("--------------------------------------------------");
+ui_print(" ");
+#
+ui_print("- Flashing system image");
+show_progress(0.040000, 0);
+package_extract_file("system.img", "/dev/block/bootdevice/by-name/system") ||
+  abort("E1001: Failed to flash system image.");
+#
+ui_print("- Flashing boot image");
+show_progress(0.090000, 0);
+package_extract_file("boot.img", "/dev/block/bootdevice/by-name/boot");
+#
+ui_print("- Flashed successfully...");
+ui_print("- Enjoy!");
+ui_print(" ");
+#
+show_progress(0.100000, 10);
+set_progress(1.000000);
