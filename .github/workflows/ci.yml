@@ -1,0 +1,389 @@
+name: a1to5x
+
+on:
+  workflow_dispatch:
+     inputs:
+       mode:
+         description: 'Download mode(aria2c,curl,axel,wget)'
+         required: true
+         default: 'aria2c'
+       output:
+         description: 'Output(wget=O)'
+         required: true
+         default: 'o'
+       filename:
+         description: 'ROM NAME(Optional)'
+       filelink:
+         description: 'ROM LINK(Support gdrive link)'
+         required: true
+       release:
+         description: 'Upload ROM to Release'
+         required: true
+         default: 'true'
+       anon:
+         description: 'Upload ROM to Anonfile'
+         required: true
+         default: 'true'
+       we:
+         description: 'Upload ROM to WeTransfer'
+         required: true
+         default: 'true'
+       muse:
+         description: 'Upload ROM to MuseTransfer'
+         required: true
+         default: 'true'
+       fstab:
+         description: 'Fstab Patching Mode(Default)'
+         required: true
+         default: 'dd'
+       flags:
+         description: 'Flags(Default)'
+         required: true
+         default: 'true'
+
+jobs:
+  a1to5x:
+    runs-on: ubuntu-18.04
+    continue-on-error: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Initialization environment
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y git wget curl aria2 python python3 python3-setuptools unzip axel cpio file
+          pip3 install protobuf
+          pip3 install gdown
+
+      - id: var
+        name: Download
+        run: |
+          echo "Download"
+          if [[ ${{ github.event.inputs.filelink }} == *"drive.google.com"* ]]; then
+              if [[ ${{ github.event.inputs.filelink }} == *"file"* ]]; then
+                  DOWNLOAD_LINK=$(echo ${{ github.event.inputs.filelink }} | cut -d / -f 6)
+                  echo "DOWNLOAD_LINK: $DOWNLOAD_LINK"
+                  gdown https://drive.google.com/uc?id=${DOWNLOAD_LINK}
+              elif [[ ${{ github.event.inputs.filelink }} == *"id"* ]]; then
+                  DOWNLOAD_LINK1=$(echo ${{ github.event.inputs.filelink }} | cut -d = -f 2 | cut -d '&' -f 1)
+                  DOWNLOAD_LINK2=$(echo ${{ github.event.inputs.filelink }} | cut -d = -f 4)
+                  echo "DOWNLOAD_LINK1: $DOWNLOAD_LINK1"
+                  echo "DOWNLOAD_LINK2: $DOWNLOAD_LINK2"
+                  gdown https://drive.google.com/uc?id=${DOWNLOAD_LINK1} || gdown https://drive.google.com/uc?id=${DOWNLOAD_LINK2}
+              fi
+          else
+              if [[ ! -z "${{ github.event.inputs.filename }}" ]]; then
+                  FILENAME="${{ github.event.inputs.filename }}"
+                  ${{ github.event.inputs.mode }} ${{ github.event.inputs.filelink }} -${{ github.event.inputs.output }} "$FILENAME"
+              else
+                  ${{ github.event.inputs.mode }} ${{ github.event.inputs.filelink }}
+              fi
+          fi
+          ls
+          FILENAME="$(ls -lS * | head -1 | awk '{print $9}')"
+          echo "FILENAME: $FILENAME"
+          FILENAME=$(basename ${FILENAME})
+          NAME=$(basename $FILENAME .zip)
+          echo "::set-output name=filename::$FILENAME"
+          echo "::set-output name=name::$NAME"
+
+      - name: Payload Extracting
+        run: |
+          echo "Payload Extracting"
+          unzip ${{ steps.var.outputs.filename }} payload.bin
+          rm -rf ${{ steps.var.outputs.filename }}
+          python3 update-payload-extractor/extract.py payload.bin --output_dir output/
+          rm -rf payload.bin
+          ls
+
+      - name: Fstab Patching
+        run: |
+            echo "system"
+            echo "**************************************"
+            ls -al
+            echo "**************************************"
+            ls -al output/system.img
+            sudo mkdir system
+            sudo mount output/system.img system
+            sudo du -sb system
+            cat system/system/vendor/etc/fstab.qcom
+            sudo cp -f system/system/vendor/etc/fstab.qcom fstab.qcom
+            fstab="system/system/vendor/etc/fstab.qcom"
+            echo "**************************************"
+            ls -al $fstab
+            echo "**************************************"
+            if [[ "${{ github.event.inputs.fstab }}" == "i" ]]; then
+                sudo sed -i 's/,slotselect//g' $fstab
+                sudo sed -i 's/,verify//g' $fstab
+                sudo sed -i 's/,avb//g' $fstab
+                sudo sed -i 's/forceencrypt/encryptable/g' $fstab
+                sudo sed -i 's/fileencryption=ice/encryptable=footer/g' $fstab
+                if [[ "${{ github.event.inputs.flags }}" == "true" ]]; then
+                    sudo sed -i '/mnt_point/{n;/system/d;}' $fstab
+                    sudo sed -i '/mnt_point/a\/dev/block/bootdevice/by-name/system		/system			ext4	ro								wait,recoveryonly' $fstab
+                    sudo sed -i '/mnt_point/G' $fstab
+                    sudo sed -i '/mnt_point/a\/dev/block/bootdevice/by-name/recovery		/recovery		emmc	defaults							defaults' $fstab
+                    sudo sed -i '/mnt_point/a\/dev/block/bootdevice/by-name/boot		/boot			emmc	defaults							defaults' $fstab
+                    sudo sed -i '/persist/i\/dev/block/bootdevice/by-name/cache		/cache			f2fs	nosuid,nodev,noatime,inline_xattr,flush_merge,data_flush	wait,formattable,check' $fstab
+                    sudo sed -i '/cache/a\/dev/block/bootdevice/by-name/cache		/cache			ext4	nosuid,nodev,noatime						wait,formattable,check' $fstab
+                    sudo sed -i '/modem/d' $fstab
+                    sudo sed -i '/misc/i\/dev/block/bootdevice/by-name/modem		/vendor/firmware_mnt		vfat	ro,context=u:object_r:firmware_file:s0,shortname=lower,uid=1000,gid=1000,dmask=227,fmask=337 wait' $fstab
+                fi
+            elif [[ "${{ github.event.inputs.fstab }}" == "dd" ]]; then
+                sudo chmod 777 $fstab
+                num_bytes=$(sudo sed 's/,slotselect//g' $fstab | wc -c)
+                sudo sed 's/,slotselect//g' $fstab 1<> $fstab
+                sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                echo "---------------------"
+                num_bytes=$(sudo sed 's/,verify//g' $fstab | wc -c)
+                sudo sed 's/,verify//g' $fstab 1<> $fstab
+                sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                echo "---------------------"
+                num_bytes=$(sudo sed 's/,avb//g' $fstab | wc -c)
+                sudo sed 's/,avb//g' $fstab 1<> $fstab
+                sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                echo "---------------------"
+                num_bytes=$(sudo sed 's/forceencrypt/encryptable/g' $fstab | wc -c)
+                sudo sed 's/forceencrypt/encryptable/g' $fstab 1<> $fstab
+                sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                echo "---------------------"
+                num_bytes=$(sudo sed 's/fileencryption=ice/encryptable=footer/g' $fstab | wc -c)
+                sudo sed 's/fileencryption=ice/encryptable=footer/g' $fstab 1<> $fstab
+                sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                echo "---------------------"
+                if [[ "${{ github.event.inputs.flags }}" == "true" ]]; then
+                    num_bytes=$(sudo sed '/mnt_point/{n;/system/d;}' $fstab | wc -c)
+                    sudo sed '/mnt_point/{n;/system/d;}' $fstab 1<> $fstab
+                    sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                    echo "---------------------"
+                    num_bytes=$(sudo sed '/mnt_point/a\/dev/block/bootdevice/by-name/system		/system			ext4	ro								wait,recoveryonly' $fstab | wc -c)
+                    sudo sed '/mnt_point/a\/dev/block/bootdevice/by-name/system		/system			ext4	ro								wait,recoveryonly' $fstab 1<> $fstab
+                    sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                    echo "---------------------"
+                    num_bytes=$(sudo sed '/mnt_point/G' $fstab | wc -c)
+                    sudo sed '/mnt_point/G' $fstab 1<> $fstab
+                    sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                    echo "---------------------"
+                    num_bytes=$(sudo sed '/mnt_point/a\/dev/block/bootdevice/by-name/recovery		/recovery		emmc	defaults							defaults' $fstab | wc -c)
+                    sudo sed '/mnt_point/a\/dev/block/bootdevice/by-name/recovery		/recovery		emmc	defaults							defaults' $fstab 1<> $fstab
+                    sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                    echo "---------------------"
+                    num_bytes=$(sudo sed '/mnt_point/a\\n/dev/block/bootdevice/by-name/boot		/boot			emmc	defaults							defaults' $fstab | wc -c)
+                    sudo sed '/mnt_point/a\/dev/block/bootdevice/by-name/boot		/boot			emmc	defaults							defaults' $fstab 1<> $fstab
+                    sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                    echo "---------------------"
+                    num_bytes=$(sudo sed '/persist/i\/dev/block/bootdevice/by-name/cache		/cache			f2fs	nosuid,nodev,noatime,inline_xattr,flush_merge,data_flush	wait,formattable,check' $fstab | wc -c)
+                    sudo sed '/persist/i\/dev/block/bootdevice/by-name/cache		/cache			f2fs	nosuid,nodev,noatime,inline_xattr,flush_merge,data_flush	wait,formattable,check' $fstab 1<> $fstab
+                    sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                    echo "---------------------"
+                    num_bytes=$(sudo sed '/cache/a\\n/dev/block/bootdevice/by-name/cache		/cache			ext4	nosuid,nodev,noatime						wait,formattable,check' $fstab | wc -c)
+                    sudo sed '/cache/a\/dev/block/bootdevice/by-name/cache		/cache			ext4	nosuid,nodev,noatime						wait,formattable,check' $fstab 1<> $fstab
+                    sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                    echo "---------------------"
+                    num_bytes=$(sudo sed '/modem/d' $fstab | wc -c)
+                    sudo sed '/modem/d' $fstab 1<> $fstab
+                    sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                    echo "---------------------"
+                    num_bytes=$(sudo sed '/dsp/a\/dev/block/bootdevice/by-name/modem		/vendor/firmware_mnt		vfat	ro,context=u:object_r:firmware_file:s0,shortname=lower,uid=1000,gid=1000,dmask=227,fmask=337 wait' $fstab | wc -c)
+                    sudo sed '/dsp/a\/dev/block/bootdevice/by-name/modem		/vendor/firmware_mnt		vfat	ro,context=u:object_r:firmware_file:s0,shortname=lower,uid=1000,gid=1000,dmask=227,fmask=337 wait' $fstab 1<> $fstab
+                    sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                    echo "---------------------"
+                    num_bytes=$(sudo sed '$d' $fstab | wc -c)
+                    sudo sed '$d' $fstab 1<> $fstab
+                    sudo dd if=/dev/null of=$fstab bs="$num_bytes" seek=1
+                    echo "---------------------"
+                fi
+                sudo chmod 644 $fstab
+                ls -al fstab.qcom
+                echo "**************************************"
+                ls -al $fstab
+                echo "**************************************"
+            fi
+            cat system/system/vendor/etc/fstab.qcom
+            sudo cp system/system/vendor/etc/fstab.qcom output/fstab.qcom
+            echo "fstab修补中"
+            echo "**************************************"
+            diff fstab.qcom output/fstab.qcom || true
+            echo "**************************************"
+            sudo du -sb system
+            sudo umount system
+            sudo rm -rf system
+            ls -al output/system.img
+
+      - name: Patching boot
+        run: |
+          echo "Patching boot"
+          mv output/boot.img mkbootimg/
+          cd mkbootimg
+          ./mkboot boot.img boot
+          rm boot.img
+          cd boot
+          echo "打印出boot下所有文件"
+          echo "**************************************"
+          ls -al
+          echo "**************************************"
+          echo "img_info修补中"
+          cp -f img_info ../img_info
+          sed -i 's/veritykeyid=id:\w*//g' img_info
+          echo "**************************************"
+          diff img_info ../img_info || true
+          echo "**************************************"
+          mv kernel image.gz-dtb
+          ../split-appended-dtb image.gz-dtb
+          rm image.gz-dtb
+          for i in `find *.dtb`; do
+            if [[ ! -z "$(../../fdtget $i /firmware/android/fstab -p 2>/dev/null || true)" ]]; then
+                echo "**************************************"
+                ../../magiskboot dtb $i print -f
+                echo "**************************************"
+                ../../fdtget $i /firmware/android/vbmeta parts 2>/dev/null || true
+                ../../fdtput $i -r /firmware/android/vbmeta
+                ../../fdtput $i /firmware/android/fstab/system status -d
+                ../../fdtput $i /firmware/android/fstab/system fsmgr_flags -d
+                ../../fdtput $i /firmware/android/fstab/system status ok -ts
+                ../../fdtput $i /firmware/android/fstab/system fsmgr_flags wait -ts
+                ../../fdtput $i /firmware/android/fstab/system mnt_flags ro,barrier=1,discard -ts
+                ../../fdtput $i /firmware/android/fstab/system type ext4 -ts
+                ../../fdtput $i /firmware/android/fstab/system dev /dev/block/platform/soc/7824900.sdhci/by-name/system -ts
+                ../../fdtput $i /firmware/android/fstab/system compatible android,system -ts
+                ../../fdtput $i /firmware/android/fstab/vendor fsmgr_flags wait -ts
+                ../../fdtput $i /firmware/android/fstab/vendor status disable -ts
+                echo "列出android下的节点"
+                ../../fdtget $i /firmware/android/vbmeta -l 2>/dev/null || true
+                ../../fdtget $i /firmware/android/vbmeta parts 2>/dev/null || true
+                echo "**************************************"
+                ../../magiskboot dtb $i print -f
+                echo "**************************************"
+                dtb=${i##* }
+                dts=${dtb%.*}.dts
+                echo "dtb $dtb"
+                echo "dts $dts"
+                ../../dtc -q -I dtb -O dts -o $dts $dtb
+                line="$(grep -n "firmware {" $dts)"
+                linea="$(echo $line | cut -d ":" -f 1)"
+                line="$(grep -n "reserved-memory" $dts)"
+                lineb="$(echo $line | cut -d ":" -f 1)"
+                lineb="`expr $lineb - 1`""p"
+                echo "**************************************"
+                sed -n "$linea,$lineb" $dts
+                echo "**************************************"
+                mv $dts ../../output/$dts
+            fi
+          done
+          echo "**************************************"
+          ls -al
+          echo "**************************************"
+          cat kernel *.dtb > image.gz-dtb
+          rm -f *.dtb
+          rm -f kernel
+          mv image.gz-dtb kernel
+          echo "列出所有文件"
+          echo "**************************************"
+          ls -al
+          echo "**************************************"
+          cd ..
+          ./mkboot boot boot.img
+          cd ..
+          mv mkbootimg/boot.img tmp/boot.img
+          cd tmp
+          ../magiskboot unpack -h boot.img
+          echo "打印tmp下文件"
+          echo "**************************************"
+          ls -al
+          echo "**************************************"
+          echo "替换ramdisk.cpio"
+          echo "**************************************"
+          diff ../cpio/ramdisk-sar.cpio ramdisk.cpio || true
+          echo "**************************************"
+          cp -f ../cpio/ramdisk-sar.cpio ramdisk.cpio
+          ../magiskboot repack boot.img
+          echo "boot打包"
+          diff new-boot.img boot.img || true
+          echo "**************************************"
+          rm -rf boot.img
+          echo "打印出所有文件"
+          echo "**************************************"
+          ls -al
+          echo "**************************************"
+          mv new-boot.img ../output/boot.img
+          cd ..
+          
+      - name: Packing
+        run: |
+          mv output/boot.img template/boot.img
+          mv output/system.img template/system.img
+          cd template
+          echo "**************************************"
+          ls -al
+          echo "**************************************"
+          zip -q -r -9 ${{ steps.var.outputs.filename }} *
+          cd ..
+          mv template/${{ steps.var.outputs.filename }} ./
+          echo "**************************************"
+          ls -al
+          echo "**************************************"
+          echo " " >> boby.txt
+          echo "*Downloads:*" >> boby.txt
+
+      - name: Upload ROM to Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: output
+          path: |
+            output
+          retention-days: 7
+
+      - name: Upload ROM to Anonfile
+        if: github.event.inputs.anon == 'true'
+        continue-on-error: true
+        run: |
+          echo "Upload ROM to Anonfile"
+          curl -fsSL git.io/file-transfer | sh
+          anontrans=$(./transfer anon --no-progress ${{ steps.var.outputs.filename }})
+          anontrans=$(echo $anontrans | grep -o -E "https[^ ]*")
+          echo "Anonfile: $anontrans"
+          echo " - *Anonfile:* $anontrans" >> boby.txt
+
+      - name: Upload ROM to WeTransfer
+        if: github.event.inputs.we == 'true'
+        continue-on-error: true
+        run: |
+          echo "Upload to WeTransfer"
+          curl -fsSL git.io/file-transfer | sh
+          wetrans=$(./transfer wet -s -p 16 --no-progress ${{ steps.var.outputs.filename }})
+          wetrans=$(echo $wetrans | grep -o -E "https[^ ]*")
+          echo "WeTransfer: $wetrans"
+          echo " - *WeTransfer:* $wetrans" >> boby.txt
+
+      - name: Upload ROM to MuseTransfer
+        if: github.event.inputs.muse == 'true'
+        continue-on-error: true
+        run: |
+          echo "Upload to MuseTransfer"
+          curl -fsSL git.io/file-transfer | sh
+          musetrans=$(./transfer muse -s -p 12 --no-progress ${{ steps.var.outputs.filename }})
+          musetrans=$(echo $musetrans | grep -o -E "https[^ ]*")
+          echo "MuseTransfer: $musetrans"
+          echo " - MuseTransfer: $musetrans" >> boby.txt
+          MD5SUM=$(md5sum ${{ steps.var.outputs.filename }} | cut -d' ' -f1)
+          SHA1SUM=$(sha1sum ${{ steps.var.outputs.filename }} | cut -d' ' -f1)
+          SHA256SUM=$(sha256sum ${{ steps.var.outputs.filename }} | cut -d' ' -f1)
+          echo "" >> boby.txt
+          echo "*Verify:*" >> boby.txt
+          echo " - *MD5SUM:* $MD5SUM" >> boby.txt
+          echo " - *SHA1SUM:* $SHA1SUM" >> boby.txt
+          echo " - *SHA256SUM:* $SHA256SUM" >> boby.txt
+
+      - name: Upload ROM to Release
+        if: github.event.inputs.release == 'true'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: ${{ steps.var.outputs.filename }}
+          name: ${{ steps.var.outputs.name }}
+          tag_name: ${{ github.run_id }}
+          body_path: boby.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.RELEASE }}
+
