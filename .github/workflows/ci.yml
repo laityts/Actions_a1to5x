@@ -82,7 +82,11 @@ jobs:
               fi
           fi
           ls
-          FILENAME="$(ls -lS * | head -1 | awk '{print $9}')"
+          FILENAME="$(find ./ -type f -size +300M | ls -lS * | head -1 | awk '{print $9}')"
+          if [[ -z "$FILENAME" ]]; then
+              exit 1
+              echo "The file was not downloaded successfully"
+          fi 
           echo "FILENAME: $FILENAME"
           FILENAME=$(basename ${FILENAME})
           NAME=$(basename $FILENAME .zip)
