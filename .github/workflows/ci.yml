@@ -240,8 +240,15 @@ jobs:
                 echo "**************************************"
                 ../../fdtget $i /firmware/android/vbmeta parts 2>/dev/null || true
                 ../../fdtput $i -r /firmware/android/vbmeta
-                ../../fdtput $i /firmware/android/fstab/system status -d
-                ../../fdtput $i /firmware/android/fstab/system fsmgr_flags -d
+                echo "**************************************"
+                if [[ ! -z "$(../../fdtget $i /firmware/android/fstab/system -p 2>/dev/null || true)" ]]; then
+                    ../../fdtput $i /firmware/android/fstab/system status -d
+                    ../../fdtput $i /firmware/android/fstab/system fsmgr_flags -d
+                else
+                    ../../fdtput $i -cp /firmware/android/fstab/system
+                    echo "add system node"
+                fi
+                echo "**************************************"
                 ../../fdtput $i /firmware/android/fstab/system status ok -ts
                 ../../fdtput $i /firmware/android/fstab/system fsmgr_flags wait -ts
                 ../../fdtput $i /firmware/android/fstab/system mnt_flags ro,barrier=1,discard -ts
