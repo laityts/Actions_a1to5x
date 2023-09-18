@@ -23,15 +23,15 @@ on:
        anon:
          description: 'Upload ROM to Anonfile'
          required: true
-         default: 'true'
+         default: 'false'
        we:
          description: 'Upload ROM to WeTransfer'
          required: true
-         default: 'true'
+         default: 'false'
        muse:
          description: 'Upload ROM to MuseTransfer'
          required: true
-         default: 'true'
+         default: 'false'
        fstab:
          description: 'Fstab Patching Mode(Default)'
          required: true
@@ -234,6 +234,7 @@ jobs:
           echo "img_info修补中"
           cp -f img_info ../img_info
           sed -i 's/veritykeyid=id:\w*//g' img_info
+          cp -f img_info ../../output/img_info
           echo "**************************************"
           diff img_info ../img_info || true
           echo "**************************************"
