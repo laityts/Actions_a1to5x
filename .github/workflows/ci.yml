@@ -91,7 +91,7 @@ jobs:
           FILENAME=$(basename ${FILENAME})
           NAME=$(basename $FILENAME .zip)
           echo "filename=$FILENAME" >> $GITHUB_OUTPUT
-          echo "name={$NAME" >> $GITHUB_OUTPUT
+          echo "name=$NAME" >> $GITHUB_OUTPUT
 
       - name: Payload Extracting
         run: |
