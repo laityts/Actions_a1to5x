@@ -327,7 +327,7 @@ jobs:
           
       - name: Packing
         run: |
-          mv output/boot.img template/boot.img
+          cp output/boot.img template/boot.img
           mv output/system.img template/system.img
           cd template
           echo "**************************************"
