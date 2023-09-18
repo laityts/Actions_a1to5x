@@ -90,8 +90,8 @@ jobs:
           echo "FILENAME: $FILENAME"
           FILENAME=$(basename ${FILENAME})
           NAME=$(basename $FILENAME .zip)
-          echo "{filename}={$FILENAME}" >> $GITHUB_OUTPUT
-          echo "{name}={$NAME}" >> $GITHUB_OUTPUT
+          echo "filename=$FILENAME" >> $GITHUB_OUTPUT
+          echo "name={$NAME" >> $GITHUB_OUTPUT
 
       - name: Payload Extracting
         run: |
@@ -342,7 +342,7 @@ jobs:
           echo "" >> boby.txt
 
       - name: Upload ROM to Artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: output
           path: |
