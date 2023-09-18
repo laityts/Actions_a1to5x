@@ -90,8 +90,8 @@ jobs:
           echo "FILENAME: $FILENAME"
           FILENAME=$(basename ${FILENAME})
           NAME=$(basename $FILENAME .zip)
-          echo "::set-output name=filename::$FILENAME"
-          echo "::set-output name=name::$NAME"
+          echo "{filename}={$FILENAME}" >> $GITHUB_OUTPUT
+          echo "{name}={$NAME}" >> $GITHUB_OUTPUT
 
       - name: Payload Extracting
         run: |
@@ -200,6 +200,8 @@ jobs:
                     echo "---------------------"
                 fi
                 sudo chmod 644 $fstab
+                sudo sed -i '/firmware_mnt/{n;/cache/d;}' $fstab
+                sudo sed -i '/firmware_mnt/{n;/cache/d;}' $fstab
                 ls -al fstab.qcom
                 echo "**************************************"
                 ls -al $fstab
