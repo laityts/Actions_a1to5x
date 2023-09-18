@@ -96,6 +96,7 @@ jobs:
       - name: Payload Extracting
         run: |
           echo "Payload Extracting"
+          echo "filename: ${{ steps.var.outputs.filename }}"
           unzip ${{ steps.var.outputs.filename }} payload.bin
           rm -rf ${{ steps.var.outputs.filename }}
           python3 update-payload-extractor/extract.py payload.bin --output_dir output/
